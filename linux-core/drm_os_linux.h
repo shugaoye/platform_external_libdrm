@@ -32,10 +32,16 @@
 /** IRQ handler arguments and return type and values */
 #define DRM_IRQ_ARGS		int irq, void *arg
 /** backwards compatibility with old irq return values */
-#ifndef IRQ_HANDLED
+#if !defined(IRQ_HANDLED) && LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,29)
 typedef void irqreturn_t;
 #define IRQ_HANDLED		/* nothing */
 #define IRQ_NONE		/* nothing */
+#endif
+
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,25)
+#define dev_set_name(dev, name, ...) ({ \
+	snprintf((dev)->bus_id, BUS_ID_SIZE, (name), __VA_ARGS__); \
+	0; })
 #endif
 
 /** AGP types */

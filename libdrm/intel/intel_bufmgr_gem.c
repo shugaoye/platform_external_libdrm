@@ -78,12 +78,13 @@ struct drm_intel_gem_bo_bucket {
     */
    int max_entries;
    int num_entries;
+   unsigned long size;
 };
 
-/* Arbitrarily chosen, 16 means that the maximum size we'll cache for reuse
- * is 1 << 16 pages, or 256MB.
+/* Only cache objects up to 64MB.  Bigger than that, and the rounding of the
+ * size makes many operations fail that wouldn't otherwise.
  */
-#define DRM_INTEL_GEM_BO_BUCKETS	16
+#define DRM_INTEL_GEM_BO_BUCKETS	14
 typedef struct _drm_intel_bufmgr_gem {
     drm_intel_bufmgr bufmgr;
 
@@ -138,6 +139,8 @@ struct _drm_intel_bo_gem {
     uint32_t tiling_mode;
     uint32_t swizzle_mode;
 
+    time_t free_time;
+
     /** Array passed to the DRM containing relocation information. */
     struct drm_i915_gem_relocation_entry *relocs;
     /** Array of bos corresponding to relocs[i].target_handle */
@@ -164,6 +167,11 @@ struct _drm_intel_bo_gem {
      * further relocations added to it.
      */
      char used_as_reloc_target;
+
+    /**
+     * Boolean of whether this buffer can be re-used
+     */
+    char reusable;
 
     /**
      * Size in bytes of this buffer and its relocation descendents.
@@ -198,41 +206,21 @@ drm_intel_gem_bo_set_tiling(drm_intel_bo *bo, uint32_t *tiling_mode,
 static void
 drm_intel_gem_bo_unreference(drm_intel_bo *bo);
 
-static int
-logbase2(int n)
-{
-   int i = 1;
-   int log2 = 0;
-
-   while (n > i) {
-      i *= 2;
-      log2++;
-   }
-
-   return log2;
-}
-
 static struct drm_intel_gem_bo_bucket *
 drm_intel_gem_bo_bucket_for_size(drm_intel_bufmgr_gem *bufmgr_gem,
 				 unsigned long size)
 {
     int i;
 
-    /* We only do buckets in power of two increments */
-    if ((size & (size - 1)) != 0)
-	return NULL;
+    for (i = 0; i < DRM_INTEL_GEM_BO_BUCKETS; i++) {
+	struct drm_intel_gem_bo_bucket *bucket = &bufmgr_gem->cache_bucket[i];
+	if (bucket->size >= size) {
+	    return bucket;
+	}
+    }
 
-    /* We should only see sizes rounded to pages. */
-    assert((size % 4096) == 0);
-
-    /* We always allocate in units of pages */
-    i = ffs(size / 4096) - 1;
-    if (i >= DRM_INTEL_GEM_BO_BUCKETS)
-	return NULL;
-
-    return &bufmgr_gem->cache_bucket[i];
+    return NULL;
 }
-
 
 static void drm_intel_gem_dump_validation_list(drm_intel_bufmgr_gem *bufmgr_gem)
 {
@@ -326,6 +314,22 @@ drm_intel_setup_reloc_list(drm_intel_bo *bo)
     return 0;
 }
 
+static int
+drm_intel_gem_bo_busy(drm_intel_bo *bo)
+{
+    drm_intel_bufmgr_gem *bufmgr_gem = (drm_intel_bufmgr_gem *)bo->bufmgr;
+    drm_intel_bo_gem *bo_gem = (drm_intel_bo_gem *)bo;
+    struct drm_i915_gem_busy busy;
+    int ret;
+
+    memset(&busy, 0, sizeof(busy));
+    busy.handle = bo_gem->gem_handle;
+
+    ret = ioctl(bufmgr_gem->fd, DRM_IOCTL_I915_GEM_BUSY, &busy);
+
+    return (ret == 0 && busy.busy);
+}
+
 static drm_intel_bo *
 drm_intel_gem_bo_alloc_internal(drm_intel_bufmgr *bufmgr, const char *name,
 				unsigned long size, unsigned int alignment,
@@ -340,10 +344,7 @@ drm_intel_gem_bo_alloc_internal(drm_intel_bufmgr *bufmgr, const char *name,
     unsigned long bo_size;
 
     /* Round the allocated size up to a power of two number of pages. */
-    bo_size = 1 << logbase2(size);
-    if (bo_size < page_size)
-	bo_size = page_size;
-    bucket = drm_intel_gem_bo_bucket_for_size(bufmgr_gem, bo_size);
+    bucket = drm_intel_gem_bo_bucket_for_size(bufmgr_gem, size);
 
     /* If we don't have caching at this size, don't actually round the
      * allocation up.
@@ -352,13 +353,13 @@ drm_intel_gem_bo_alloc_internal(drm_intel_bufmgr *bufmgr, const char *name,
 	bo_size = size;
 	if (bo_size < page_size)
 	    bo_size = page_size;
+    } else {
+	bo_size = bucket->size;
     }
 
     pthread_mutex_lock(&bufmgr_gem->lock);
     /* Get a buffer out of the cache if available */
     if (bucket != NULL && bucket->num_entries > 0) {
-	struct drm_i915_gem_busy busy;
-
 	if (for_render) {
 	    /* Allocate new render-target BOs from the tail (MRU)
 	     * of the list, as it will likely be hot in the GPU cache
@@ -377,13 +378,8 @@ drm_intel_gem_bo_alloc_internal(drm_intel_bufmgr *bufmgr, const char *name,
 	     */
 	    bo_gem = DRMLISTENTRY(drm_intel_bo_gem, bucket->head.next, head);
 
-	    memset(&busy, 0, sizeof(busy));
-	    busy.handle = bo_gem->gem_handle;
-
-	    ret = ioctl(bufmgr_gem->fd, DRM_IOCTL_I915_GEM_BUSY, &busy);
-	    alloc_from_cache = (ret == 0 && busy.busy == 0);
-
-	    if (alloc_from_cache) {
+	    if (!drm_intel_gem_bo_busy(&bo_gem->bo)) {
+		alloc_from_cache = 1;
 		DRMLISTDEL(&bo_gem->head);
 		bucket->num_entries--;
 	    }
@@ -420,6 +416,7 @@ drm_intel_gem_bo_alloc_internal(drm_intel_bufmgr *bufmgr, const char *name,
     bo_gem->used_as_reloc_target = 0;
     bo_gem->tiling_mode = I915_TILING_NONE;
     bo_gem->swizzle_mode = I915_BIT_6_SWIZZLE_NONE;
+    bo_gem->reusable = 1;
 
     DBG("bo_create: buf %d (%s) %ldb\n",
 	bo_gem->gem_handle, bo_gem->name, size);
@@ -479,6 +476,7 @@ drm_intel_bo_gem_create_from_name(drm_intel_bufmgr *bufmgr, const char *name,
     bo_gem->validate_index = -1;
     bo_gem->gem_handle = open_arg.handle;
     bo_gem->global_name = handle;
+    bo_gem->reusable = 0;
 
     memset(&get_tiling, 0, sizeof(get_tiling));
     get_tiling.handle = bo_gem->gem_handle;
@@ -505,6 +503,7 @@ drm_intel_gem_bo_reference(drm_intel_bo *bo)
     drm_intel_bufmgr_gem *bufmgr_gem = (drm_intel_bufmgr_gem *)bo->bufmgr;
     drm_intel_bo_gem *bo_gem = (drm_intel_bo_gem *)bo;
 
+    assert(bo_gem->refcount > 0);
     pthread_mutex_lock(&bufmgr_gem->lock);
     bo_gem->refcount++;
     pthread_mutex_unlock(&bufmgr_gem->lock);
@@ -515,6 +514,7 @@ drm_intel_gem_bo_reference_locked(drm_intel_bo *bo)
 {
     drm_intel_bo_gem *bo_gem = (drm_intel_bo_gem *)bo;
 
+    assert(bo_gem->refcount > 0);
     bo_gem->refcount++;
 }
 
@@ -543,12 +543,37 @@ drm_intel_gem_bo_free(drm_intel_bo *bo)
     free(bo);
 }
 
+/** Frees all cached buffers significantly older than @time. */
+static void
+drm_intel_gem_cleanup_bo_cache(drm_intel_bufmgr_gem *bufmgr_gem, time_t time)
+{
+    int i;
+
+    for (i = 0; i < DRM_INTEL_GEM_BO_BUCKETS; i++) {
+	struct drm_intel_gem_bo_bucket *bucket = &bufmgr_gem->cache_bucket[i];
+
+	while (!DRMLISTEMPTY(&bucket->head)) {
+	    drm_intel_bo_gem *bo_gem;
+
+	    bo_gem = DRMLISTENTRY(drm_intel_bo_gem, bucket->head.next, head);
+	    if (time - bo_gem->free_time <= 1)
+		break;
+
+	    DRMLISTDEL(&bo_gem->head);
+	    bucket->num_entries--;
+
+	    drm_intel_gem_bo_free(&bo_gem->bo);
+	}
+    }
+}
+
 static void
 drm_intel_gem_bo_unreference_locked(drm_intel_bo *bo)
 {
     drm_intel_bufmgr_gem *bufmgr_gem = (drm_intel_bufmgr_gem *)bo->bufmgr;
     drm_intel_bo_gem *bo_gem = (drm_intel_bo_gem *)bo;
 
+    assert(bo_gem->refcount > 0);
     if (--bo_gem->refcount == 0) {
 	struct drm_intel_gem_bo_bucket *bucket;
 	uint32_t tiling_mode;
@@ -569,13 +594,18 @@ drm_intel_gem_bo_unreference_locked(drm_intel_bo *bo)
 	bucket = drm_intel_gem_bo_bucket_for_size(bufmgr_gem, bo->size);
 	/* Put the buffer into our internal cache for reuse if we can. */
 	tiling_mode = I915_TILING_NONE;
-	if (bo_gem->global_name == 0 &&
+	if (bo_gem->reusable &&
 	    bucket != NULL &&
 	    (bucket->max_entries == -1 ||
 	     (bucket->max_entries > 0 &&
 	      bucket->num_entries < bucket->max_entries)) &&
 	    drm_intel_gem_bo_set_tiling(bo, &tiling_mode, 0) == 0)
 	{
+	    struct timespec time;
+
+	    clock_gettime(CLOCK_MONOTONIC, &time);
+	    bo_gem->free_time = time.tv_sec;
+
 	    bo_gem->name = NULL;
 	    bo_gem->validate_index = -1;
 	    bo_gem->relocs = NULL;
@@ -584,6 +614,8 @@ drm_intel_gem_bo_unreference_locked(drm_intel_bo *bo)
 
 	    DRMLISTADDTAIL(&bo_gem->head, &bucket->head);
 	    bucket->num_entries++;
+
+	    drm_intel_gem_cleanup_bo_cache(bufmgr_gem, time.tv_sec);
 	} else {
 	    drm_intel_gem_bo_free(bo);
 	}
@@ -737,7 +769,6 @@ drm_intel_gem_bo_unmap_gtt(drm_intel_bo *bo)
 {
     drm_intel_bufmgr_gem *bufmgr_gem = (drm_intel_bufmgr_gem *)bo->bufmgr;
     drm_intel_bo_gem *bo_gem = (drm_intel_bo_gem *)bo;
-    struct drm_i915_gem_sw_finish sw_finish;
     int ret = 0;
 
     if (bo == NULL)
@@ -806,6 +837,29 @@ drm_intel_gem_bo_subdata (drm_intel_bo *bo, unsigned long offset,
 }
 
 static int
+drm_intel_gem_get_pipe_from_crtc_id (drm_intel_bufmgr *bufmgr, int crtc_id)
+{
+    drm_intel_bufmgr_gem *bufmgr_gem = (drm_intel_bufmgr_gem *) bufmgr;
+    struct drm_i915_get_pipe_from_crtc_id get_pipe_from_crtc_id;
+    int ret;
+
+    get_pipe_from_crtc_id.crtc_id = crtc_id;
+    ret = ioctl (bufmgr_gem->fd, DRM_IOCTL_I915_GET_PIPE_FROM_CRTC_ID,
+		 &get_pipe_from_crtc_id);
+    if (ret != 0) {
+	/* We return -1 here to signal that we don't
+	 * know which pipe is associated with this crtc.
+	 * This lets the caller know that this information
+	 * isn't available; using the wrong pipe for
+	 * vblank waiting can cause the chipset to lock up
+	 */
+	return -1;
+    }
+
+    return get_pipe_from_crtc_id.pipe;
+}
+
+static int
 drm_intel_gem_bo_get_subdata (drm_intel_bo *bo, unsigned long offset,
 			      unsigned long size, void *data)
 {
@@ -835,7 +889,7 @@ drm_intel_gem_bo_get_subdata (drm_intel_bo *bo, unsigned long offset,
 static void
 drm_intel_gem_bo_wait_rendering(drm_intel_bo *bo)
 {
-    return drm_intel_gem_bo_start_gtt_access(bo, 0);
+    drm_intel_gem_bo_start_gtt_access(bo, 0);
 }
 
 /**
@@ -1165,6 +1219,7 @@ drm_intel_gem_bo_flink(drm_intel_bo *bo, uint32_t *name)
 	if (ret != 0)
 	    return -errno;
 	bo_gem->global_name = flink.name;
+	bo_gem->reusable = 0;
     }
     
     *name = bo_gem->global_name;
@@ -1353,6 +1408,19 @@ drm_intel_gem_check_aperture_space(drm_intel_bo **bo_array, int count)
     }
 }
 
+/*
+ * Disable buffer reuse for objects which are shared with the kernel
+ * as scanout buffers
+ */
+static int
+drm_intel_gem_bo_disable_reuse(drm_intel_bo *bo)
+{
+    drm_intel_bo_gem *bo_gem = (drm_intel_bo_gem *)bo;
+
+    bo_gem->reusable = 0;
+    return 0;
+}
+
 /**
  * Initializes the GEM buffer manager, which uses the kernel to allocate, map,
  * and manage map buffer objections.
@@ -1366,6 +1434,7 @@ drm_intel_bufmgr_gem_init(int fd, int batch_size)
     struct drm_i915_gem_get_aperture aperture;
     drm_i915_getparam_t gp;
     int ret, i;
+    unsigned long size;
 
     bufmgr_gem = calloc(1, sizeof(*bufmgr_gem));
     bufmgr_gem->fd = fd;
@@ -1431,12 +1500,17 @@ drm_intel_bufmgr_gem_init(int fd, int batch_size)
     bufmgr_gem->bufmgr.bo_set_tiling = drm_intel_gem_bo_set_tiling;
     bufmgr_gem->bufmgr.bo_flink = drm_intel_gem_bo_flink;
     bufmgr_gem->bufmgr.bo_exec = drm_intel_gem_bo_exec;
+    bufmgr_gem->bufmgr.bo_busy = drm_intel_gem_bo_busy;
     bufmgr_gem->bufmgr.destroy = drm_intel_bufmgr_gem_destroy;
     bufmgr_gem->bufmgr.debug = 0;
     bufmgr_gem->bufmgr.check_aperture_space = drm_intel_gem_check_aperture_space;
+    bufmgr_gem->bufmgr.bo_disable_reuse = drm_intel_gem_bo_disable_reuse;
+    bufmgr_gem->bufmgr.get_pipe_from_crtc_id = drm_intel_gem_get_pipe_from_crtc_id;
     /* Initialize the linked lists for BO reuse cache. */
-    for (i = 0; i < DRM_INTEL_GEM_BO_BUCKETS; i++)
+    for (i = 0, size = 4096; i < DRM_INTEL_GEM_BO_BUCKETS; i++, size *= 2) {
 	DRMINITLISTHEAD(&bufmgr_gem->cache_bucket[i].head);
+	bufmgr_gem->cache_bucket[i].size = size;
+    }
 
     return &bufmgr_gem->bufmgr;
 }

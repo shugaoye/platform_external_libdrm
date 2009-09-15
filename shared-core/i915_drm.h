@@ -205,6 +205,7 @@ typedef struct drm_i915_sarea {
 #define DRM_I915_GEM_GET_TILING	0x22
 #define DRM_I915_GEM_GET_APERTURE 0x23
 #define DRM_I915_GEM_MMAP_GTT	0x24
+#define DRM_I915_GET_PIPE_FROM_CRTC_ID	0x25
 
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
 #define DRM_IOCTL_I915_FLUSH		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLUSH)
@@ -242,6 +243,7 @@ typedef struct drm_i915_sarea {
 #define DRM_IOCTL_I915_GEM_SET_TILING	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_SET_TILING, struct drm_i915_gem_set_tiling)
 #define DRM_IOCTL_I915_GEM_GET_TILING	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_GET_TILING, struct drm_i915_gem_get_tiling)
 #define DRM_IOCTL_I915_GEM_GET_APERTURE	DRM_IOR  (DRM_COMMAND_BASE + DRM_I915_GEM_GET_APERTURE, struct drm_i915_gem_get_aperture)
+#define DRM_IOCTL_I915_GET_PIPE_FROM_CRTC_ID DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GET_PIPE_FROM_CRTC_ID, struct drm_i915_get_pipe_from_crtc_id)
 
 /* Asynchronous page flipping:
  */
@@ -392,58 +394,6 @@ typedef struct drm_i915_mmio {
 typedef struct drm_i915_hws_addr {
 	uint64_t addr;
 } drm_i915_hws_addr_t;
-
-/*
- * Relocation header is 4 uint32_ts
- * 0 - 32 bit reloc count
- * 1 - 32-bit relocation type
- * 2-3 - 64-bit user buffer handle ptr for another list of relocs.
- */
-#define I915_RELOC_HEADER 4
-
-/*
- * type 0 relocation has 4-uint32_t stride
- * 0 - offset into buffer
- * 1 - delta to add in
- * 2 - buffer handle
- * 3 - reserved (for optimisations later).
- */
-/*
- * type 1 relocation has 4-uint32_t stride.
- * Hangs off the first item in the op list.
- * Performed after all valiations are done.
- * Try to group relocs into the same relocatee together for
- * performance reasons.
- * 0 - offset into buffer
- * 1 - delta to add in
- * 2 - buffer index in op list.
- * 3 - relocatee index in op list.
- */
-#define I915_RELOC_TYPE_0 0
-#define I915_RELOC0_STRIDE 4
-#define I915_RELOC_TYPE_1 1
-#define I915_RELOC1_STRIDE 4
-
-
-struct drm_i915_op_arg {
-	uint64_t next;
-	uint64_t reloc_ptr;
-	int handled;
-	unsigned int pad64;
-	union {
-		struct drm_bo_op_req req;
-		struct drm_bo_arg_rep rep;
-	} d;
-
-};
-
-struct drm_i915_execbuffer {
-	uint64_t ops_list;
-	uint32_t num_buffers;
-	struct drm_i915_batchbuffer batch;
-	drm_context_t context; /* for lockless use in the future */
-	struct drm_fence_arg fence_arg;
-};
 
 struct drm_i915_gem_init {
 	/**
@@ -767,6 +717,14 @@ struct drm_i915_gem_get_aperture {
 	 * bytes
 	 */
 	uint64_t aper_available_size;
+};
+
+struct drm_i915_get_pipe_from_crtc_id {
+	/** ID of CRTC being requested **/
+	uint32_t crtc_id;
+
+	/** pipe of requested CRTC **/
+	uint32_t pipe;
 };
 
 #endif				/* _I915_DRM_H_ */

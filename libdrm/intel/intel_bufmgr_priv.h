@@ -177,7 +177,36 @@ struct _drm_intel_bufmgr {
      */
     int (*bo_flink)(drm_intel_bo *bo, uint32_t *name);
 
+    /**
+     * Returns 1 if mapping the buffer for write could cause the process
+     * to block, due to the object being active in the GPU.
+     */
+    int (*bo_busy)(drm_intel_bo *bo);
+
     int (*check_aperture_space)(drm_intel_bo **bo_array, int count);
+
+    /**
+     * Disable buffer reuse for buffers which will be shared in some way,
+     * as with scanout buffers. When the buffer reference count goes to zero,
+     * it will be freed and not placed in the reuse list.
+     *
+     * \param bo Buffer to disable reuse for
+     */
+    int (*bo_disable_reuse)(drm_intel_bo *bo);
+
+    /**
+     *
+     * Return the pipe associated with a crtc_id so that vblank
+     * synchronization can use the correct data in the request.
+     * This is only supported for KMS and gem at this point, when
+     * unsupported, this function returns -1 and leaves the decision
+     * of what to do in that case to the caller
+     *
+     * \param bufmgr the associated buffer manager
+     * \param crtc_id the crtc identifier
+     */
+    int (*get_pipe_from_crtc_id)(drm_intel_bufmgr *bufmgr, int crtc_id);
+
     int debug; /**< Enables verbose debugging printouts */
 };
 

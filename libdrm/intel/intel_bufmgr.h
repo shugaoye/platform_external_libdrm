@@ -107,6 +107,9 @@ int drm_intel_bo_set_tiling(drm_intel_bo *bo, uint32_t *tiling_mode,
 int drm_intel_bo_get_tiling(drm_intel_bo *bo, uint32_t *tiling_mode,
 			uint32_t *swizzle_mode);
 int drm_intel_bo_flink(drm_intel_bo *bo, uint32_t *name);
+int drm_intel_bo_busy(drm_intel_bo *bo);
+
+int drm_intel_bo_disable_reuse(drm_intel_bo *bo);
 
 /* drm_intel_bufmgr_gem.c */
 drm_intel_bufmgr *drm_intel_bufmgr_gem_init(int fd, int batch_size);
@@ -117,6 +120,8 @@ void drm_intel_bufmgr_gem_enable_reuse(drm_intel_bufmgr *bufmgr);
 int drm_intel_gem_bo_map_gtt(drm_intel_bo *bo);
 int drm_intel_gem_bo_unmap_gtt(drm_intel_bo *bo);
 void drm_intel_gem_bo_start_gtt_access(drm_intel_bo *bo, int write_enable);
+
+int drm_intel_get_pipe_from_crtc_id(drm_intel_bufmgr *bufmgr, int crtc_id);
 
 /* drm_intel_bufmgr_fake.c */
 drm_intel_bufmgr *drm_intel_bufmgr_fake_init(int fd,

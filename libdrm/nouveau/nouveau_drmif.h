@@ -35,11 +35,6 @@ struct nouveau_device_priv {
 	drm_context_t ctx;
 	drmLock *lock;
 	int needs_close;
-
-	int mm_enabled;
-/*XXX: move to nouveau_device when interface gets bumped */
-	uint64_t vram_aper_size;
-	uint64_t gart_aper_size;
 };
 #define nouveau_device(n) ((struct nouveau_device_priv *)(n))
 
