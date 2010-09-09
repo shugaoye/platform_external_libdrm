@@ -1,0 +1,48 @@
+# Copyright 2010, The Android-x86 Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+ifeq ($(strip $(BOARD_USES_DRM)),true)
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES :=			\
+	xf86drm.c			\
+	xf86drmHash.c			\
+	xf86drmMode.c			\
+	xf86drmRandom.c			\
+	xf86drmSL.c
+
+LOCAL_C_INCLUDES +=			\
+	$(LOCAL_PATH)/include/drm
+
+LOCAL_MODULE := libdrm
+
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES :=			\
+	intel/intel_bufmgr.c		\
+	intel/intel_bufmgr_fake.c	\
+	intel/intel_bufmgr_gem.c	\
+	intel/mm.c
+
+LOCAL_C_INCLUDES +=			\
+	$(LOCAL_PATH)/include/drm
+
+LOCAL_CFLAGS += -DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1
+
+LOCAL_MODULE := libdrm_intel
+
+LOCAL_SHARED_LIBRARIES := libdrm
+
+include $(BUILD_SHARED_LIBRARY)
+
+endif
