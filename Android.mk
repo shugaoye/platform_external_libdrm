@@ -45,4 +45,26 @@ LOCAL_SHARED_LIBRARIES := libdrm
 
 include $(BUILD_SHARED_LIBRARY)
 
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES :=			\
+	radeon/radeon_bo_gem.c		\
+	radeon/radeon_cs_gem.c		\
+	radeon/radeon_cs_space.c	\
+	radeon/radeon_bo.c		\
+	radeon/radeon_cs.c		\
+	radeon/bof.c
+
+LOCAL_C_INCLUDES +=			\
+	$(LOCAL_PATH)/radeon		\
+	$(LOCAL_PATH)/include/drm
+
+LOCAL_CFLAGS += -DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1
+
+LOCAL_MODULE := libdrm_radeon
+
+LOCAL_SHARED_LIBRARIES := libdrm
+
+include $(BUILD_SHARED_LIBRARY)
+
 endif
