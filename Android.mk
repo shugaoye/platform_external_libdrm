@@ -67,4 +67,28 @@ LOCAL_SHARED_LIBRARIES := libdrm
 
 include $(BUILD_SHARED_LIBRARY)
 
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES :=			\
+	nouveau/nouveau_device.c	\
+	nouveau/nouveau_channel.c	\
+	nouveau/nouveau_pushbuf.c	\
+	nouveau/nouveau_grobj.c		\
+	nouveau/nouveau_notifier.c	\
+	nouveau/nouveau_bo.c		\
+	nouveau/nouveau_resource.c	\
+	nouveau/nouveau_private.h	\
+	nouveau/nouveau_reloc.c
+
+LOCAL_C_INCLUDES +=			\
+	$(LOCAL_PATH)/include/drm
+
+LOCAL_CFLAGS += -DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1
+
+LOCAL_MODULE := libdrm_nouveau
+
+LOCAL_SHARED_LIBRARIES := libdrm
+
+include $(BUILD_SHARED_LIBRARY)
+
 endif
