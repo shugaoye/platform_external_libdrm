@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-ifeq ($(strip $(BOARD_USES_DRM)),true)
+ifneq ($(strip $(BOARD_GPU_DRIVERS)),)
 
 LOCAL_PATH := $(call my-dir)
 
