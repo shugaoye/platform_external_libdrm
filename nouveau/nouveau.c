@@ -533,7 +533,7 @@ nouveau_bo_map(struct nouveau_bo *bo, uint32_t access,
 {
 	struct nouveau_bo_priv *nvbo = nouveau_bo(bo);
 	if (bo->map == NULL) {
-		bo->map = mmap(0, bo->size, PROT_READ | PROT_WRITE,
+		bo->map = mmap64(0, bo->size, PROT_READ | PROT_WRITE,
 			       MAP_SHARED, bo->device->fd, nvbo->map_handle);
 		if (bo->map == MAP_FAILED) {
 			bo->map = NULL;
