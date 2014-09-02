@@ -40,7 +40,6 @@ LOCAL_C_INCLUDES := \
 	$(LIBDRM_TOP) \
 	$(LIBDRM_TOP)/intel \
 	$(LIBDRM_TOP)/include/drm \
-	external/libpciaccess/include
 
 LOCAL_CFLAGS := \
 	-DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1
@@ -50,6 +49,5 @@ LOCAL_COPY_HEADERS_TO := libdrm
 
 LOCAL_SHARED_LIBRARIES := \
 	libdrm \
-	libpciaccess
 
 include $(BUILD_SHARED_LIBRARY)

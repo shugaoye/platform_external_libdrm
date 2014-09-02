@@ -36,7 +36,9 @@
 #include <errno.h>
 #include <drm.h>
 #include <i915_drm.h>
+#ifndef ANDROID
 #include <pciaccess.h>
+#endif
 #include "libdrm.h"
 #include "intel_bufmgr.h"
 #include "intel_bufmgr_priv.h"
@@ -306,6 +308,7 @@ drm_intel_get_pipe_from_crtc_id(drm_intel_bufmgr *bufmgr, int crtc_id)
 	return -1;
 }
 
+#ifndef ANDROID
 static size_t
 drm_intel_probe_agp_aperture_size(int fd)
 {
@@ -352,3 +355,4 @@ drm_intel_get_aperture_sizes(int fd, size_t *mappable, size_t *total)
 	*total = aperture.aper_size;
 	return 0;
 }
+#endif
