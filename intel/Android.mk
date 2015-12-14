@@ -38,6 +38,5 @@ LOCAL_CFLAGS := \
 
 LOCAL_SHARED_LIBRARIES := \
 	libdrm \
-	libpciaccess
 
 include $(BUILD_SHARED_LIBRARY)
