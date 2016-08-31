@@ -27,6 +27,16 @@ include $(CLEAR_VARS)
 # Import variables LIBDRM_{,H_,INCLUDE_H_,INCLUDE_VMWGFX_H_}FILES
 include $(LOCAL_PATH)/Makefile.sources
 
+common_CFLAGS := \
+	-DHAVE_VISIBILITY=1 \
+	-DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1 \
+	-Wno-enum-conversion \
+	-Wno-missing-field-initializers \
+	-Wno-pointer-arith \
+	-Wno-sign-compare \
+	-Wno-tautological-compare \
+	-Wno-unused-parameter
+
 #static library for the device (recovery)
 include $(CLEAR_VARS)
 LOCAL_MODULE := libdrm
@@ -41,8 +51,8 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/include/drm
 
 LOCAL_CFLAGS := \
-	-DHAVE_VISIBILITY=1 \
-	-DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1
+	$(common_CFLAGS)
+
 include $(BUILD_STATIC_LIBRARY)
 
 # Shared library for the device
@@ -59,8 +69,8 @@ LOCAL_C_INCLUDES := \
         $(LOCAL_PATH)/include/drm
 
 LOCAL_CFLAGS := \
-        -DHAVE_VISIBILITY=1 \
-        -DHAVE_LIBDRM_ATOMIC_PRIMITIVES=1
+	$(common_CFLAGS)
+
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
